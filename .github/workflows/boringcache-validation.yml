@@ -1,0 +1,139 @@
+name: BoringCache validation
+
+# Cache-only validation for the question raised in asterinas/asterinas#3852:
+# whether Cargo and kernel build outputs should get a shared cache of their own
+# alongside the Cachix cache that covers Nix dependencies.
+#
+# The workload is upstream's `make kernel`, the same command the `compile` leg of
+# `test_x86.yml` runs, in upstream's own container image. Job 1 builds and
+# publishes. Job 2 runs the same command on a clean runner with restore-only
+# access.
+
+on:
+  workflow_dispatch:
+    inputs:
+      cache_provider:
+        description: Cache implementation under test
+        type: choice
+        options:
+          - none
+          - boringcache
+        default: none
+      source_ref:
+        description: Exact Asterinas commit to build
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.cache_provider }}-${{ inputs.source_ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+    container:
+      image: asterinas/kernel-dev:0.18.1-20260901
+      options: -v /dev:/dev --privileged
+      volumes:
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    steps:
+      - name: Free disk space
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Restore Cargo and compiler state
+        if: inputs.cache_provider == 'boringcache'
+        uses: boringcache/one@v1
+        with:
+          mode: cargo
+          trust-policy: restore
+          diagnostics: summary
+          fail-on-cache-error: true
+
+      - name: Build the kernel
+        id: build
+        run: make kernel
+
+      - name: Publish Cargo and compiler state
+        if: always() && inputs.cache_provider == 'boringcache'
+        id: boringcache
+        uses: boringcache/one@v1
+        with:
+          mode: cargo
+          trust-policy: publish
+          diagnostics: summary
+          fail-on-cache-error: true
+
+      - name: Retain evidence
+        if: always() && inputs.cache_provider == 'boringcache'
+        uses: actions/upload-artifact@v4
+        with:
+          name: asterinas-publish-${{ inputs.source_ref }}
+          path: ${{ steps.boringcache.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 30
+
+  restore:
+    name: Restore on a clean runner
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+    container:
+      image: asterinas/kernel-dev:0.18.1-20260901
+      options: -v /dev:/dev --privileged
+      volumes:
+        - /usr/lib/google-cloud-sdk:/usr/lib/google-cloud-sdk
+        - /usr/local/lib/android:/usr/local/lib/android
+        - /usr/share/dotnet:/usr/share/dotnet
+    steps:
+      - name: Free disk space
+        run: rm -rf /usr/lib/google-cloud-sdk/* /usr/local/lib/android/* /usr/share/dotnet/*
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+
+      - name: Restore Cargo and compiler state
+        if: inputs.cache_provider == 'boringcache'
+        id: boringcache
+        uses: boringcache/one@v1
+        with:
+          mode: cargo
+          trust-policy: restore
+          diagnostics: summary
+          fail-on-cache-error: true
+
+      - name: Build the kernel
+        run: make kernel
+
+      - name: Retain evidence
+        if: always() && inputs.cache_provider == 'boringcache'
+        uses: actions/upload-artifact@v4
+        with:
+          name: asterinas-restore-${{ inputs.source_ref }}
+          path: ${{ steps.boringcache.outputs.evidence-path }}
+          if-no-files-found: error
+          retention-days: 30
