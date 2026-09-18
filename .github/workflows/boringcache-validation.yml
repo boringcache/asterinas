@@ -68,11 +68,18 @@ jobs:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
 
+      - name: Restore the BoringCache plan the source checkout replaced
+        if: inputs.cache_provider == 'boringcache'
+        run: |
+          curl -fsSL -o .boringcache.toml \
+            https://raw.githubusercontent.com/boringcache/asterinas/boringcache-validation/.boringcache.toml
+
       - name: Restore Cargo and compiler state
         if: inputs.cache_provider == 'boringcache'
         uses: boringcache/one@v1
         with:
-          mode: cargo
+          mode: archive
+          cache-profiles: kernel
           trust-policy: restore
           diagnostics: summary
           fail-on-cache-error: true
@@ -86,7 +93,8 @@ jobs:
         id: boringcache
         uses: boringcache/one@v1
         with:
-          mode: cargo
+          mode: archive
+          cache-profiles: kernel
           trust-policy: publish
           diagnostics: summary
           fail-on-cache-error: true
@@ -125,12 +133,19 @@ jobs:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
 
+      - name: Restore the BoringCache plan the source checkout replaced
+        if: inputs.cache_provider == 'boringcache'
+        run: |
+          curl -fsSL -o .boringcache.toml \
+            https://raw.githubusercontent.com/boringcache/asterinas/boringcache-validation/.boringcache.toml
+
       - name: Restore Cargo and compiler state
         if: inputs.cache_provider == 'boringcache'
         id: boringcache
         uses: boringcache/one@v1
         with:
-          mode: cargo
+          mode: archive
+          cache-profiles: kernel
           trust-policy: restore
           diagnostics: summary
           fail-on-cache-error: true

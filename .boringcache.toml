@@ -1,1 +1,22 @@
 workspace = "boringcache/asterinas"
+
+# `make kernel` drives Cargo from inside the container, so there is no Cargo
+# command for the action to wrap. Archive the build state it produces instead.
+[entries.cargo-registry-cache]
+path = "/root/.cargo/registry/cache"
+tag = "asterinas-cargo-registry-cache"
+
+[entries.cargo-registry-index]
+path = "/root/.cargo/registry/index"
+tag = "asterinas-cargo-registry-index"
+
+[entries.cargo-git-db]
+path = "/root/.cargo/git/db"
+tag = "asterinas-cargo-git-db"
+
+[entries.kernel-target]
+path = "target"
+tag = "asterinas-kernel-target"
+
+[profiles.kernel]
+entries = ["cargo-registry-cache", "cargo-registry-index", "cargo-git-db", "kernel-target"]
