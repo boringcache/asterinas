@@ -19,4 +19,6 @@ path = "target"
 tag = "asterinas-kernel-target"
 
 [profiles.kernel]
-entries = ["cargo-registry-cache", "cargo-registry-index", "cargo-git-db", "kernel-target"]
+# The kernel-dev image ships its own populated Cargo registry, and a restore
+# refuses a non-empty destination, so cache only what the build produces.
+entries = ["kernel-target"]
