@@ -76,28 +76,18 @@ jobs:
 
       - name: Restore Cargo and compiler state
         if: inputs.cache_provider == 'boringcache'
+        id: boringcache
         uses: boringcache/one@v1
         with:
           mode: archive
           cache-profiles: kernel
-          trust-policy: restore
+          trust-policy: auto
           diagnostics: summary
           fail-on-cache-error: true
 
       - name: Build the kernel
         id: build
         run: make kernel
-
-      - name: Publish Cargo and compiler state
-        if: always() && inputs.cache_provider == 'boringcache'
-        id: boringcache
-        uses: boringcache/one@v1
-        with:
-          mode: archive
-          cache-profiles: kernel
-          trust-policy: publish
-          diagnostics: summary
-          fail-on-cache-error: true
 
       - name: Retain evidence
         if: always() && inputs.cache_provider == 'boringcache'
