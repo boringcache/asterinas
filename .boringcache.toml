@@ -16,7 +16,7 @@ tag = "asterinas-cargo-git-db"
 
 [entries.kernel-target]
 path = "target"
-tag = "asterinas-kernel-target"
+tag = "asterinas-kernel-target-20260923"
 
 [profiles.kernel]
 # The kernel-dev image ships its own populated Cargo registry, and a restore

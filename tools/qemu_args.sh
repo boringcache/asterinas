@@ -7,14 +7,17 @@
 #  - scheme: "normal", "test", "microvm" or "iommu";
 # Other arguments are configured via environmental variables:
 #  - OVMF: "on" or "off";
+#  - OVMF_DIR: directory containing OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd;
 #  - BOOT_METHOD: "vmm-direct", "grub-rescue-iso" or "grub-qcow2";
 #  - BOOT_PROTOCOL: "multiboot", "multiboot2", "pvh", "linux-legacy32", "linux-efi-pe64" or "linux-efi-handover64";
 #  - NETDEV: "user" or "tap";
 #  - VHOST: "off" or "on";
 #  - VSOCK: "off" or "on";
 #  - VIRTIOFS: "off" or "on";
+#  - VIRTIOFS_WORK_DIR: work directory used by the virtio-fs daemons;
 #  - VIRTIOFS_TAG: mount tag for virtio-fs device;
-#  - VIRTIOFS_SOCKET: vhost-user socket path for the virtio-fs server;
+#  - VIRTIOFS_SCRATCH: "off" or "on", whether to attach a scratch virtio-fs device;
+#  - VIRTIOFS_SCRATCH_TAG: mount tag for the scratch virtio-fs device;
 #  - INITRAMFS: "on" or "off"; when "off", attach `rootfs.img` as an extra block device.
 #  - CONSOLE: "hvc0" to enable virtio console;
 #  - SMP: number of CPUs;
@@ -24,9 +27,13 @@
 #    xfstests images (xfstests_test.img and xfstests_scratch.img) to the VM.
 
 OVMF=${OVMF:-"on"}
+# Directory holding OVMF.fd, OVMF_VARS.fd and microvm/MICROVM.fd. Defaults to the
+# Docker image's path; the Nix dev shell exports this to the Nix store instead.
+OVMF_DIR=${OVMF_DIR:-/root/ovmf/release}
 VHOST=${VHOST:-"off"}
 VSOCK=${VSOCK:-"off"}
 VIRTIOFS=${VIRTIOFS:-"off"}
+VIRTIOFS_SCRATCH=${VIRTIOFS_SCRATCH:-"off"}
 NETDEV=${NETDEV:-"user"}
 CONSOLE=${CONSOLE:-"hvc0"}
 XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES:-false}
@@ -36,8 +43,6 @@ if [ "$XFSTESTS_NEEDS_BLOCK_DEVICES" != "true" ] && \
     echo "Invalid XFSTESTS_NEEDS_BLOCK_DEVICES=${XFSTESTS_NEEDS_BLOCK_DEVICES}" 1>&2
     exit 1
 fi
-VIRTIOFS_TAG=${VIRTIOFS_TAG:-"aster-virtiofs"}
-VIRTIOFS_SOCKET=${VIRTIOFS_SOCKET:-"/tmp/vhostqemu/vfs.sock"}
 
 # Draw all host ports from a single `shuf` invocation,
 # so that none of them will conflict with others.
@@ -78,6 +83,23 @@ fi
 if [ "$INITRAMFS" = "off" ]; then
     ROOTFS_DRIVE_ARGS="-drive if=none,format=raw,id=rootfs,file=./test/initramfs/build/rootfs.img"
 fi
+
+VIRTIOFS_TAG=${VIRTIOFS_TAG:-"aster-virtiofs"}
+VIRTIOFS_SCRATCH_TAG=${VIRTIOFS_SCRATCH_TAG:-"aster-virtiofs-scratch"}
+
+if [ "$VIRTIOFS_SCRATCH" = "on" ] && [ "$VIRTIOFS" != "on" ]; then
+    echo "VIRTIOFS_SCRATCH=on requires VIRTIOFS=on" 1>&2
+    exit 1
+fi
+
+if [ "$VIRTIOFS" = "on" ] && [ -z "${VIRTIOFS_WORK_DIR:-}" ]; then
+    echo "VIRTIOFS_WORK_DIR must be set when VIRTIOFS=on" 1>&2
+    exit 1
+fi
+
+# These paths must match the work directories passed to tools/run_virtiofsd.sh.
+VIRTIOFS_SOCKET="$VIRTIOFS_WORK_DIR/vfs.sock"
+VIRTIOFS_SCRATCH_SOCKET="$VIRTIOFS_WORK_DIR/scratch/vfs.sock"
 
 if [ "$1" = "riscv" ]; then
     # NOTE: The initramfs assumes that ext2.img, exfat.img, and ltp_dev.img appear as
@@ -155,7 +177,7 @@ if [ "$1" = "tdx" ]; then
         -nographic \
         -monitor pty \
         -nodefaults \
-        -bios /root/ovmf/release/OVMF.fd \
+        -bios ${OVMF_DIR}/OVMF.fd \
         -cpu host,-kvm-steal-time,pmu=off \
         -machine q35,kernel-irqchip=split,confidential-guest-support=tdx0 \
         -object '$TDX_OBJECT' \
@@ -284,6 +306,15 @@ if [ "$VIRTIOFS" = "on" ]; then
         -chardev socket,id=char0,path=$VIRTIOFS_SOCKET \
         -device vhost-user-fs-pci,chardev=char0,tag=$VIRTIOFS_TAG \
     "
+
+    if [ "$VIRTIOFS_SCRATCH" = "on" ]; then
+        echo "[$1] Enabled scratch virtio-fs: tag=$VIRTIOFS_SCRATCH_TAG, socket=$VIRTIOFS_SCRATCH_SOCKET" 1>&2
+        QEMU_ARGS="
+            $QEMU_ARGS \
+            -chardev socket,id=char1,path=$VIRTIOFS_SCRATCH_SOCKET \
+            -device vhost-user-fs-pci,chardev=char1,tag=$VIRTIOFS_SCRATCH_TAG \
+        "
+    fi
 fi
 
 if [ "$VSOCK" = "on" ]; then
@@ -322,11 +353,11 @@ fi
 if [ "$OVMF" = "on" ]; then
     if [ "$1" = "microvm" ]; then
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/microvm/MICROVM.fd \
+            -bios ${OVMF_DIR}/microvm/MICROVM.fd \
         "
     else
         QEMU_ARGS="${QEMU_ARGS} \
-            -bios /root/ovmf/release/OVMF.fd \
+            -bios ${OVMF_DIR}/OVMF.fd \
         "
     fi
 fi

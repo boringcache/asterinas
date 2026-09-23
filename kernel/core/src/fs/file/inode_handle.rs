@@ -5,8 +5,8 @@
 use core::fmt::Display;
 
 use super::{
-    AccessMode, CreationFlags, FileCommon, FileLike, InodeType, Mappable, SettableStatusFlags,
-    StatusFlags, SyncMode, file_table::FdFlags, flock::FlockItem,
+    AccessMode, CreationFlags, FileCommon, FileLike, InodeType, Mappable, MappableObject,
+    SettableStatusFlags, StatusFlags, SyncMode, file_table::FdFlags, flock::FlockItem,
 };
 use crate::{
     events::IoEvents,
@@ -374,7 +374,7 @@ impl FileLike for InodeHandle {
         return_errno_with_message!(Errno::ENOTTY, "ioctl is not supported");
     }
 
-    fn mappable(&self) -> Result<Mappable> {
+    fn mappable(&self) -> Result<MappableObject<'_>> {
         if self.status_flags().contains(StatusFlags::O_PATH) {
             return_errno_with_message!(Errno::EBADF, "the file is opened as a path");
         }
@@ -383,11 +383,11 @@ impl FileLike for InodeHandle {
         if let Some(page_cache) = inode.page_cache() {
             // If the inode has a page cache, it is a file-backed mapping and
             // we return the VMO as the mappable object.
-            Ok(Mappable::Vmo(page_cache))
+            Ok(MappableObject::Vmo(page_cache))
         } else if let Some(ref open_file) = self.open_file {
             // Otherwise, it is a special file (e.g. device file) and we should
             // return the file-specific mappable object.
-            open_file.mappable()
+            open_file.mappable().map(MappableObject::Device)
         } else {
             return_errno_with_message!(Errno::ENODEV, "the file is not mappable");
         }
@@ -560,7 +560,7 @@ pub(crate) enum SeekFrom {
 /// A per-open file object can hold file-description-specific state and override
 /// operations that are not purely inode-backed, such as state and operations for
 /// devices, pipes, namespace files, and procfs files.
-pub(crate) trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
+pub trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'static {
     /// Checks whether the `seek()` operation should fail.
     fn check_seekable(&self) -> Result<()>;
 
@@ -593,7 +593,7 @@ pub(crate) trait PerOpenFileOps: Pollable + FileOps + Any + Send + Sync + 'stati
     }
 
     // See `FileLike::mappable`.
-    fn mappable(&self) -> Result<Mappable> {
+    fn mappable(&self) -> Result<&dyn Mappable> {
         return_errno_with_message!(Errno::EINVAL, "the file is not mappable");
     }
 

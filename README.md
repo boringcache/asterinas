@@ -156,12 +156,14 @@ Follow the steps below to get Asterinas up and running.
 2. Run a Docker container as the development environment:
 
     ```bash
-    docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/dev:0.18.1-20260901
+    docker run -it --privileged --network=host -v /dev:/dev -v $(pwd)/asterinas:/root/asterinas asterinas/dev:0.18.1-20260918
     ```
 
     Alternatively, if you use VS Code with the
     [Dev Containers](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
     extension, open the cloned folder and select "Reopen in Container".
+    If you prefer Nix to Docker, enter the Nix development shell instead,
+    as described in [Using Nix for Development](book/src/kernel/nix-development.md).
 
 3. Inside the container,
 go to the project folder (`/root/asterinas`) and run:
